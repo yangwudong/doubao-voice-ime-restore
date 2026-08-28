@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build universal binary
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Build
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Smoke test
+        run: |
+          binary=.build/apple/Products/Release/DoubaoVoiceRestore
+          lipo -info "$binary"
+          "$binary" --version
+          "$binary" --help > /dev/null
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Requires Swift 6.0+, which bundles swift-format in the toolchain.
+      - name: swift-format
+        run: swift format lint --strict --recursive Sources
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check install scripts
+        run: shellcheck scripts/install.sh scripts/uninstall.sh

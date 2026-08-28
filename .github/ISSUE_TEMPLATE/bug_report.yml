@@ -1,0 +1,44 @@
+name: Bug report
+description: 报告一个问题 / Report a problem
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述 / What happened
+      description: 期望的行为，和实际发生的行为
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS 版本与芯片 / macOS version and chip
+      placeholder: "15.7.8, Apple Silicon"
+    validations:
+      required: true
+
+  - type: input
+    id: doubao
+    attributes:
+      label: 豆包输入法版本 / Doubao IME version
+      description: 豆包输入法设置 → 关于
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 本工具版本 / Tool version
+      description: "运行 ~/Library/Application\\ Support/DoubaoVoiceRestore/DoubaoVoiceRestore --version"
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: 日志 / Log
+      description: "复现问题前后的日志片段：tail -40 ~/Library/Logs/DoubaoVoiceRestore.log"
+      render: text
+    validations:
+      required: true
