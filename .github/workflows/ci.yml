@@ -15,7 +15,7 @@ jobs:
     name: Build universal binary
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Show toolchain
         run: swift --version
@@ -34,7 +34,7 @@ jobs:
     name: Lint
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Requires Swift 6.0+, which bundles swift-format in the toolchain.
       - name: swift-format
@@ -44,7 +44,7 @@ jobs:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check install scripts
         run: shellcheck scripts/install.sh scripts/uninstall.sh
