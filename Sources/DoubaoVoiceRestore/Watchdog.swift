@@ -35,7 +35,6 @@ final class Watchdog {
     private var sourceToRestore: String?
     /// Most recent non-Doubao input source seen — what the user actually types with.
     private var lastUserSourceID: String? = Tuning.fallbackInputSourceID
-    private var doubaoSelectedAt: Date?
     /// When every Doubao window went away, or `nil` if some are still on screen.
     private var windowsGoneSince: Date?
     private var didTypeDuringSession = false
@@ -101,7 +100,6 @@ final class Watchdog {
             // starts a candidate voice session.
             guard case .idle = state else { return }
             sourceToRestore = lastUserSourceID
-            doubaoSelectedAt = Date()
             windowsGoneSince = nil
             state = .arming(deadline: Date().addingTimeInterval(Tuning.armGrace))
             log("armed; will restore \(sourceToRestore ?? "unknown")")
@@ -111,9 +109,12 @@ final class Watchdog {
     // MARK: Polling
 
     private func poll() {
-        // While idle and outside the arming grace period there is nothing to
-        // watch, so skip the window query entirely and stay at ~0% CPU.
-        if case .idle = state, !isWithinArmGrace { return }
+        // While idle and Doubao is not the selected source there is nothing
+        // to watch, so skip the window query entirely and stay at ~0% CPU.
+        // While Doubao IS selected, keep watching at idle: a pill that shows
+        // up late (cold IME start) or after a re-trigger with no source
+        // change must still be adopted, or the user is stuck on Doubao.
+        if case .idle = state, !InputSource.isDoubao(InputSource.currentID()) { return }
 
         if keyActivity.sawNewKeyDown(), case .session = state {
             didTypeDuringSession = true
@@ -125,11 +126,12 @@ final class Watchdog {
 
         switch state {
         case .idle:
-            // The pill can beat the input-source notification; adopt the session
-            // anyway as long as Doubao really is active.
-            if hasPill, isWithinArmGrace, InputSource.isDoubao(InputSource.currentID()) {
+            // Adopt the session whenever a pill is on screen while Doubao is
+            // selected — whether the input-source notification already fired
+            // (early pill) or the arming grace has since expired (late pill).
+            if hasPill, InputSource.isDoubao(InputSource.currentID()) {
                 sourceToRestore = lastUserSourceID
-                beginSession(reason: "pill appeared before notification")
+                beginSession(reason: "pill detected while idle")
             }
 
         case .arming(let deadline):
@@ -186,11 +188,6 @@ final class Watchdog {
     /// A keystroke is an explicit end-of-session signal, so restore sooner.
     private var restoreDelay: TimeInterval {
         didTypeDuringSession ? Tuning.sessionGoneDelayAfterKey : Tuning.sessionGoneDelay
-    }
-
-    private var isWithinArmGrace: Bool {
-        guard let doubaoSelectedAt else { return false }
-        return Date().timeIntervalSince(doubaoSelectedAt) < Tuning.armGrace
     }
 
     private var stateName: String {
