@@ -205,7 +205,7 @@ bash uninstall.sh           # 从解压出来的发布包
 | --- | --- |
 | 完全没反应 | `launchctl list \| grep doubao-voice-ime-restore` 看进程是否在跑；再看日志尾部 |
 | 日志里出现 `no pill within 3.0s` | 浮窗没被识别（豆包改版或多屏摆放问题）。调 `pillMaxWidth` / `pillMaxHeight` / `pillBottomBand` |
-| 日志一直没有 `input source ->` | 豆包的全局语音没开启，或者语音快捷键实际上没有切换输入法 |
+| 日志一直没有状态跃迁（`armed; will restore …`） | 豆包的全局语音没开启，或者语音快捷键实际上没有切换输入法。加 `--verbose` 可看到每次输入源变化 |
 | 切回来太早（把语音截断了） | 调大 `sessionGoneDelay` |
 | 切回来太慢 | 调小 `sessionGoneDelay` |
 | 找不到豆包进程 | `pgrep -x DoubaoIme` 应该输出一个 PID；没有说明豆包输入法没在运行 |

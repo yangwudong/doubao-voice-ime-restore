@@ -42,9 +42,11 @@ final class Watchdog {
 
     private let queue = DispatchQueue(label: "com.doubaovoicerestore.watchdog")
     private let isQuiet: Bool
+    private let isVerbose: Bool
 
-    init(isQuiet: Bool = false) {
+    init(isQuiet: Bool = false, isVerbose: Bool = false) {
         self.isQuiet = isQuiet
+        self.isVerbose = isVerbose
     }
 
     // MARK: Lifecycle
@@ -78,7 +80,7 @@ final class Watchdog {
         // TIS reports the change before it has fully settled; let it land first.
         queue.asyncAfter(deadline: .now() + Tuning.inputSourceSettleDelay) { [self] in
             let current = InputSource.currentID()
-            log("input source -> \(current ?? "unknown") (state: \(stateName))")
+            verbose("input source -> \(current ?? "unknown") (state: \(stateName))")
 
             guard InputSource.isDoubao(current) else {
                 if let current, !current.isEmpty { lastUserSourceID = current }
@@ -210,5 +212,11 @@ final class Watchdog {
         guard !isQuiet else { return }
         print("\(Self.timestampFormatter.string(from: Date())) \(message)")
         fflush(stdout)
+    }
+
+    /// Per-input-source-change detail; only emitted with `--verbose`.
+    private func verbose(_ message: String) {
+        guard isVerbose, !isQuiet else { return }
+        log(message)
     }
 }

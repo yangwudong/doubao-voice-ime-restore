@@ -1,7 +1,7 @@
 import Foundation
 
 let programName = "DoubaoVoiceRestore"
-let programVersion = "1.0.0"
+let programVersion = "1.0.1"
 
 func printUsage(to stream: FileHandle = .standardOutput) {
     let usage = """
@@ -13,6 +13,7 @@ func printUsage(to stream: FileHandle = .standardOutput) {
 
         OPTIONS
           -q, --quiet      Do not log activity
+          --verbose        Also log every input-source change (default: state transitions only)
           -h, --help       Show this help and exit
           -v, --version    Show the version and exit
 
@@ -25,11 +26,14 @@ func printUsage(to stream: FileHandle = .standardOutput) {
 }
 
 var isQuiet = false
+var isVerbose = false
 
 for argument in CommandLine.arguments.dropFirst() {
     switch argument {
     case "-q", "--quiet":
         isQuiet = true
+    case "--verbose":
+        isVerbose = true
     case "-h", "--help":
         printUsage()
         exit(EXIT_SUCCESS)
@@ -46,5 +50,5 @@ for argument in CommandLine.arguments.dropFirst() {
 
 // Held by a global so the run loop's weak captures stay valid for the
 // lifetime of the process.
-let watchdog = Watchdog(isQuiet: isQuiet)
+let watchdog = Watchdog(isQuiet: isQuiet, isVerbose: isVerbose)
 watchdog.run()
