@@ -54,15 +54,10 @@ enum Tuning {
     /// How long to wait for confirmation that our restore took effect.
     static let restoreConfirmTimeout: TimeInterval = 1.5
 
-    /// After we issue a restore, input-source changes to anything other than
-    /// the restore target within this window are treated as transient fallout
-    /// of Doubao being torn down (e.g. a momentary ABC hop) and ignored.
-    static let restoreImmunityWindow: TimeInterval = 2.0
-
-    /// Doubao's hotkey first selects the ASCII layout before its own source
-    /// lands. An ASCII source that appeared this recently is treated as that
-    /// hop, and the previous source is restored instead.
-    static let abcHopWindow: TimeInterval = 1.5
+    /// Doubao's hotkey first toggles to the previously selected source and
+    /// selects Doubao ~0.35s later. A source that appeared this recently
+    /// before Doubao is treated as that hop, and the one before it restored.
+    static let hotkeyHopWindow: TimeInterval = 0.8
 
     /// A keyDown this recent counts as "the user just typed".
     static let recentKeyDownWindow: TimeInterval = 0.35

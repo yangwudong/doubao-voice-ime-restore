@@ -1,7 +1,7 @@
 import Foundation
 
 let programName = "DoubaoVoiceRestore"
-let programVersion = "1.0.3"
+let programVersion = "1.0.4"
 
 func printUsage(to stream: FileHandle = .standardOutput) {
     let usage = """
