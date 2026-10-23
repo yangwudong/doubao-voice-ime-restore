@@ -35,9 +35,23 @@ final class Watchdog {
     private var sourceToRestore: String?
     /// Most recent non-Doubao input source seen — what the user actually types with.
     private var lastUserSourceID: String? = Tuning.fallbackInputSourceID
+    /// When `lastUserSourceID` last changed, and what it was before that.
+    ///
+    /// Doubao's hotkey transiently selects the ASCII layout (ABC) before its
+    /// own input source lands. Without history that hop overwrites the real
+    /// user source, and the next restore switches to ABC.
+    private var lastUserSourceChangedAt: Date?
+    private var previousUserSourceID: String?
     /// When every Doubao window went away, or `nil` if some are still on screen.
     private var windowsGoneSince: Date?
     private var didTypeDuringSession = false
+    /// Until when a non-Doubao input-source change is treated as fallout from
+    /// our own `TISSelectInputSource` call rather than a real user switch.
+    ///
+    /// While Doubao is being torn down, macOS may transiently report ABC
+    /// before the restore target settles — and that notification can land
+    /// AFTER the target's own, silently corrupting `lastUserSourceID`.
+    private var restoreImmunityUntil: Date?
 
     private let queue = DispatchQueue(label: "com.doubaovoicerestore.watchdog")
     private let isQuiet: Bool
@@ -82,7 +96,19 @@ final class Watchdog {
             verbose("input source -> \(current ?? "unknown") (state: \(stateName))")
 
             guard InputSource.isDoubao(current) else {
-                if let current, !current.isEmpty { lastUserSourceID = current }
+                let immunized = restoreImmunityUntil.map { Date() < $0 } ?? false
+                if immunized, current != sourceToRestore {
+                    verbose("ignoring transient \(current ?? "unknown") in restore-immunity window")
+                    return
+                }
+                restoreImmunityUntil = nil
+                if let current, !current.isEmpty, current != lastUserSourceID {
+                    previousUserSourceID = lastUserSourceID
+                    lastUserSourceChangedAt = Date()
+                    lastUserSourceID = current
+                } else if let current, !current.isEmpty {
+                    lastUserSourceChangedAt = Date()
+                }
                 switch state {
                 case .session:
                     log("user switched away mid-session; standing down")
@@ -99,7 +125,7 @@ final class Watchdog {
             // Doubao just became active. Only a switch from a settled idle state
             // starts a candidate voice session.
             guard case .idle = state else { return }
-            sourceToRestore = lastUserSourceID
+            sourceToRestore = trustedUserSource()
             windowsGoneSince = nil
             state = .arming(deadline: Date().addingTimeInterval(Tuning.armGrace))
             log("armed; will restore \(sourceToRestore ?? "unknown")")
@@ -176,6 +202,7 @@ final class Watchdog {
 
         if InputSource.select(id: target) {
             log("voice session ended; restored \(target)")
+            restoreImmunityUntil = Date().addingTimeInterval(Tuning.restoreImmunityWindow)
             state = .restoring(deadline: Date().addingTimeInterval(Tuning.restoreConfirmTimeout))
         } else {
             log("voice session ended; could not select \(target)")
@@ -184,6 +211,17 @@ final class Watchdog {
     }
 
     // MARK: Helpers
+
+    /// The source to restore: skips an ASCII hop that landed right before
+    /// Doubao was selected (Doubao's hotkey first selects the ASCII layout).
+    private func trustedUserSource() -> String? {
+        guard let changedAt = lastUserSourceChangedAt,
+            Date().timeIntervalSince(changedAt) < Tuning.abcHopWindow,
+            let previous = previousUserSourceID, !previous.isEmpty
+        else { return lastUserSourceID }
+        log("skipping transient \(lastUserSourceID ?? "unknown"); restoring \(previous) instead")
+        return previous
+    }
 
     /// A keystroke is an explicit end-of-session signal, so restore sooner.
     private var restoreDelay: TimeInterval {
