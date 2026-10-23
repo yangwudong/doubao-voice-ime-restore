@@ -1,4 +1,5 @@
 import Carbon.HIToolbox
+import DoubaoVoiceRestoreCore
 import Foundation
 
 /// Restores the user's previous input source after a Doubao voice-input session.
@@ -7,60 +8,32 @@ import Foundation
 /// speech, then leaves it selected. This watchdog notices that switch, waits for
 /// the voice session to end, and puts the previous input source back.
 ///
-/// State machine:
-/// ```
-///   idle ──(Doubao selected)──▶ arming ──(pill appears)──▶ session
-///     ▲                           │                          │
-///     │                    (grace expires:                (Doubao windows gone
-///     │                     manual switch)                 for the debounce)
-///     │                           │                          │
-///     └───────────────────────────┴──── restoring ◀───────────┘
-/// ```
+/// All decisions live in `RestoreMachine`; this class only feeds it system
+/// observations and carries out the actions it returns. Everything runs on one
+/// serial queue, so the machine never sees concurrent events.
 final class Watchdog {
-    private enum State {
-        case idle
-        /// Doubao was selected; waiting to see whether a voice pill shows up.
-        case arming(deadline: Date)
-        /// Voice input is on screen.
-        case session
-        /// Restore issued; waiting for the system to confirm it.
-        case restoring(deadline: Date)
-    }
-
-    private var state: State = .idle
+    private var machine: RestoreMachine
     private var probe = VoicePillProbe()
     private var keyActivity = KeyActivityMonitor()
 
-    /// Input source to return to when the voice session ends.
-    private var sourceToRestore: String?
-    /// Most recent non-Doubao input source seen — what the user actually types with.
-    private var lastUserSourceID: String? = Tuning.fallbackInputSourceID
-    /// When `lastUserSourceID` last changed, and what it was before that.
-    ///
-    /// Doubao's hotkey transiently selects the previously used source before
-    /// its own input source lands. Without history that hop overwrites the
-    /// real user source, and the restore picks the wrong one.
-    private var lastUserSourceChangedAt: Date?
-    private var previousUserSourceID: String?
-    /// When every Doubao window went away, or `nil` if some are still on screen.
-    private var windowsGoneSince: Date?
-    private var didTypeDuringSession = false
-
     private let queue = DispatchQueue(label: "com.doubaovoicerestore.watchdog")
+    /// Runs only while `machine.needsPolling`; idle away from Doubao the
+    /// process makes no wakeups at all.
+    private var pollTimer: DispatchSourceTimer?
+    /// Last Doubao window set logged in verbose mode, to log only changes.
+    private var lastLoggedWindows: [CGRect] = []
     private let isQuiet: Bool
     private let isVerbose: Bool
 
     init(isQuiet: Bool = false, isVerbose: Bool = false) {
         self.isQuiet = isQuiet
         self.isVerbose = isVerbose
+        self.machine = RestoreMachine(initialSourceID: InputSource.currentID())
     }
 
     // MARK: Lifecycle
 
     func run() -> Never {
-        if let current = InputSource.currentID(), !InputSource.isDoubao(current) {
-            lastUserSourceID = current
-        }
         log("started; current source: \(InputSource.currentID() ?? "unknown")")
 
         DistributedNotificationCenter.default().addObserver(
@@ -71,163 +44,76 @@ final class Watchdog {
             self?.inputSourceDidChange()
         }
 
-        let timer = Timer(timeInterval: Tuning.pollInterval, repeats: true) { [weak self] _ in
-            self?.queue.async { self?.poll() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
+        queue.async { self.updatePolling() }
+        // Distributed notifications are delivered through the main run loop,
+        // so it must run (dispatchMain would not service it).
         RunLoop.main.run()
-
         fatalError("run loop exited unexpectedly")
     }
 
-    // MARK: Input source changes
+    // MARK: Events
 
     private func inputSourceDidChange() {
         // TIS reports the change before it has fully settled; let it land first.
         queue.asyncAfter(deadline: .now() + Tuning.inputSourceSettleDelay) { [self] in
-            let current = InputSource.currentID()
-            verbose("input source -> \(current ?? "unknown") (state: \(stateName))")
-
-            guard InputSource.isDoubao(current) else {
-                // TIS often fires several notifications per switch; only a real
-                // change of source may move the history, or a duplicate would
-                // make a long-settled source look like a fresh hotkey hop.
-                if let current, !current.isEmpty, current != lastUserSourceID {
-                    previousUserSourceID = lastUserSourceID
-                    lastUserSourceChangedAt = Date()
-                    lastUserSourceID = current
-                }
-                switch state {
-                case .session:
-                    log("user switched away mid-session; standing down")
-                    state = .idle
-                case .restoring:
-                    log("restore confirmed")
-                    // Our own restore is trusted, never a hotkey hop.
-                    if current == sourceToRestore { lastUserSourceChangedAt = nil }
-                    state = .idle
-                case .idle, .arming:
-                    break
-                }
-                return
-            }
-
-            // Doubao just became active. Only a switch from a settled idle state
-            // starts a candidate voice session.
-            guard case .idle = state else { return }
-            sourceToRestore = trustedUserSource()
-            windowsGoneSince = nil
-            state = .arming(deadline: Date().addingTimeInterval(Tuning.armGrace))
-            log("armed; will restore \(sourceToRestore ?? "unknown")")
+            perform(machine.inputSourceSettled(InputSource.currentID(), at: Date()))
         }
     }
-
-    // MARK: Polling
 
     private func poll() {
-        // While idle and Doubao is not the selected source there is nothing
-        // to watch, so skip the window query entirely and stay at ~0% CPU.
-        // While Doubao IS selected, keep watching at idle: a pill that shows
-        // up late (cold IME start) or after a re-trigger with no source
-        // change must still be adopted, or the user is stuck on Doubao.
-        if case .idle = state, !InputSource.isDoubao(InputSource.currentID()) { return }
-
-        if keyActivity.sawNewKeyDown(), case .session = state {
-            didTypeDuringSession = true
-        }
-
-        let windows = probe.doubaoWindows()
-        let hasPill = windows.contains { probe.looksLikePill($0) }
-        let hasAnyWindow = !windows.isEmpty
-
-        switch state {
-        case .idle:
-            // Adopt the session whenever a pill is on screen while Doubao is
-            // selected — whether the input-source notification already fired
-            // (early pill) or the arming grace has since expired (late pill).
-            if hasPill, InputSource.isDoubao(InputSource.currentID()) {
-                sourceToRestore = trustedUserSource()
-                beginSession(reason: "pill detected while idle")
+        let current = InputSource.currentID()
+        // Skip the window query when the machine would ignore it anyway.
+        var observation = RestoreMachine.Observation(currentSourceID: current)
+        if !machine.isIdle || Heuristics.isDoubao(current) {
+            let windows = probe.doubaoWindows()
+            let displays = probe.displayBounds()
+            observation.hasPill = windows.contains {
+                Heuristics.looksLikePill($0, displays: displays)
             }
-
-        case .arming(let deadline):
-            if hasPill {
-                beginSession(reason: "pill detected")
-            } else if Date() > deadline {
-                log("no pill within \(Tuning.armGrace)s; treating as a manual switch")
-                state = .idle
-            }
-
-        case .session:
-            if hasAnyWindow {
-                if windowsGoneSince != nil { log("Doubao windows are back; restore cancelled") }
-                windowsGoneSince = nil
-            } else if windowsGoneSince == nil {
-                windowsGoneSince = Date()
-                log("Doubao windows gone; restoring in \(String(format: "%.2f", restoreDelay))s")
-            } else if Date().timeIntervalSince(windowsGoneSince!) >= restoreDelay {
-                restore()
-            }
-
-        case .restoring(let deadline):
-            if Date() > deadline {
-                log("no confirmation for the restore; standing down")
-                state = .idle
+            observation.hasAnyWindow = !windows.isEmpty
+            observation.sawNewKeyDown = keyActivity.sawNewKeyDown()
+            if isVerbose, windows != lastLoggedWindows {
+                lastLoggedWindows = windows
+                log("doubao windows: \(windows.map(describe)) pill: \(observation.hasPill)")
             }
         }
+        perform(machine.poll(observation, at: Date()))
     }
 
-    private func beginSession(reason: String) {
-        state = .session
-        windowsGoneSince = nil
-        didTypeDuringSession = false
-        log("voice session started (\(reason))")
-    }
-
-    private func restore() {
-        guard let target = sourceToRestore, !target.isEmpty else {
-            state = .idle
-            return
+    private func perform(_ actions: [RestoreMachine.Action]) {
+        for action in actions {
+            switch action {
+            case .log(let message):
+                log(message)
+            case .verbose(let message):
+                if isVerbose { log(message) }
+            case .select(let target):
+                let succeeded = InputSource.select(id: target)
+                perform(machine.selectResult(target, succeeded: succeeded))
+            }
         }
+        updatePolling()
+    }
 
-        if InputSource.select(id: target) {
-            log("voice session ended; restored \(target)")
-            state = .restoring(deadline: Date().addingTimeInterval(Tuning.restoreConfirmTimeout))
-        } else {
-            log("voice session ended; could not select \(target)")
-            state = .idle
+    /// Starts or stops the poll timer to match what the machine needs.
+    private func updatePolling() {
+        if machine.needsPolling, pollTimer == nil {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(
+                deadline: .now(), repeating: Tuning.pollInterval, leeway: .milliseconds(10))
+            timer.setEventHandler { [weak self] in self?.poll() }
+            timer.resume()
+            pollTimer = timer
+        } else if !machine.needsPolling, let timer = pollTimer {
+            timer.cancel()
+            pollTimer = nil
         }
     }
 
-    // MARK: Helpers
+    // MARK: Logging
 
-    /// The source to restore: skips the hop that landed right before Doubao
-    /// was selected.
-    ///
-    /// Doubao's hotkey first toggles to the *previously* selected source and
-    /// only ~0.35s later selects Doubao — so from Sogou it hops through ABC,
-    /// and from ABC it hops through Sogou. The hop can be any kind of source.
-    private func trustedUserSource() -> String? {
-        guard let changedAt = lastUserSourceChangedAt,
-            Date().timeIntervalSince(changedAt) < Tuning.hotkeyHopWindow,
-            let previous = previousUserSourceID, !previous.isEmpty
-        else { return lastUserSourceID }
-        log("skipping transient \(lastUserSourceID ?? "unknown"); restoring \(previous) instead")
-        return previous
-    }
-
-    /// A keystroke is an explicit end-of-session signal, so restore sooner.
-    private var restoreDelay: TimeInterval {
-        didTypeDuringSession ? Tuning.sessionGoneDelayAfterKey : Tuning.sessionGoneDelay
-    }
-
-    private var stateName: String {
-        switch state {
-        case .idle: "idle"
-        case .arming: "arming"
-        case .session: "session"
-        case .restoring: "restoring"
-        }
+    private func describe(_ frame: CGRect) -> String {
+        "(\(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height)))"
     }
 
     private static let timestampFormatter: DateFormatter = {
@@ -240,11 +126,5 @@ final class Watchdog {
         guard !isQuiet else { return }
         print("\(Self.timestampFormatter.string(from: Date())) \(message)")
         fflush(stdout)
-    }
-
-    /// Per-input-source-change detail; only emitted with `--verbose`.
-    private func verbose(_ message: String) {
-        guard isVerbose, !isQuiet else { return }
-        log(message)
     }
 }

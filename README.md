@@ -19,7 +19,7 @@ English: [README.en.md](README.en.md)
 
 > **豆包只管语音输入这一件事。浮窗关闭后，应该还是我自己那个天天用的输入法（搜狗、微信、系统拼音，随便哪个）。**
 
-通义千问输入法就是这样做的，豆包不是。`DoubaoVoiceRestore` 是一个约 300 行的后台常驻程序，专门补上这个行为。
+通义千问输入法就是这样做的，豆包不是。`DoubaoVoiceRestore` 是一个几百行的后台常驻程序，专门补上这个行为。
 
 ## 效果对比
 
@@ -188,7 +188,7 @@ bash uninstall.sh           # 从解压出来的发布包
 
 ## 参数微调
 
-豆包没有提供「语音开始 / 结束」的通知，所以会话是靠浮窗的尺寸和位置推断出来的。如果豆包改版导致判定不准，改 [`Sources/DoubaoVoiceRestore/Tuning.swift`](Sources/DoubaoVoiceRestore/Tuning.swift) 里的常量后重新 `make install` 即可，其他代码里没有硬编码这些假设。
+豆包没有提供「语音开始 / 结束」的通知，所以会话是靠浮窗的尺寸和位置推断出来的。如果豆包改版导致判定不准，改 [`Sources/DoubaoVoiceRestoreCore/Tuning.swift`](Sources/DoubaoVoiceRestoreCore/Tuning.swift) 里的常量后重新 `make install` 即可，其他代码里没有硬编码这些假设。
 
 | 常量 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -197,7 +197,7 @@ bash uninstall.sh           # 从解压出来的发布包
 | `sessionGoneDelay` | 0.35 s | 窗口消失后的默认防抖时间。切回太早就调大 |
 | `sessionGoneDelayAfterKey` | 0.12 s | 你按键结束语音时的防抖时间 |
 | `armGrace` | 3.0 s | 切到豆包后，等浮窗出现的最长时间。超时视为你手动切的，不做处理 |
-| `pollInterval` | 0.06 s | 窗口轮询间隔（空闲时完全不轮询，CPU 占用约为 0） |
+| `pollInterval` | 0.06 s | 窗口轮询间隔。只在豆包被选中或语音会话进行中才运行；空闲时轮询定时器完全停止，进程零唤醒 |
 
 ## 故障排查
 
@@ -218,6 +218,7 @@ make            # 列出所有可用目标
 make build      # 编译当前架构的 release 版本
 make universal  # 编译 arm64 + x86_64 通用二进制
 make run        # 前台运行，^C 停止（调试用）
+make test       # 运行单元测试
 make lint       # swift-format 检查
 make fmt        # swift-format 格式化
 make package    # 在 dist/ 里打出发布用的 zip
@@ -227,11 +228,16 @@ make clean      # 清理构建产物
 代码结构：
 
 ```
-Sources/DoubaoVoiceRestore/
-├── main.swift          命令行参数与入口
-├── Watchdog.swift      状态机：idle → arming → session → restoring
-├── SystemProbes.swift  对系统接口的只读封装（输入法 / 窗口 / 按键活跃度）
-└── Tuning.swift        全部可调常量
+Sources/
+├── DoubaoVoiceRestoreCore/      纯决策逻辑，不碰任何系统接口，可单元测试
+│   ├── RestoreMachine.swift     状态机：idle → arming → session → restoring
+│   ├── Heuristics.swift         豆包输入源 / 语音浮窗的判定
+│   └── Tuning.swift             全部可调常量
+└── DoubaoVoiceRestore/          系统胶水层
+    ├── main.swift               命令行参数与入口
+    ├── Watchdog.swift           把系统观测喂给状态机、执行它返回的动作、按需启停轮询
+    └── SystemProbes.swift       对系统接口的只读封装（输入法 / 窗口 / 按键活跃度）
+Tests/DoubaoVoiceRestoreCoreTests/  用虚拟时钟回放真实时序的单元测试
 ```
 
 命令行参数：

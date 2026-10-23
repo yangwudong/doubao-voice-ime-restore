@@ -12,13 +12,16 @@ concurrency:
 
 jobs:
   build:
-    name: Build universal binary
+    name: Test and build universal binary
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
 
       - name: Show toolchain
         run: swift --version
+
+      - name: Unit tests
+        run: swift test
 
       - name: Build
         run: swift build -c release --arch arm64 --arch x86_64
@@ -38,7 +41,7 @@ jobs:
 
       # Requires Swift 6.0+, which bundles swift-format in the toolchain.
       - name: swift-format
-        run: swift format lint --strict --recursive Sources
+        run: swift format lint --strict --recursive Sources Tests
 
   shellcheck:
     name: ShellCheck

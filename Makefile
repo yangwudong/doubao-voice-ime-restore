@@ -10,7 +10,7 @@ STAGE_DIR   := $(DIST_DIR)/doubao-voice-ime-restore
 ARCHIVE     := $(DIST_DIR)/doubao-voice-ime-restore-macos-universal.zip
 
 .DEFAULT_GOAL := help
-.PHONY: help build universal run install uninstall fmt lint package clean
+.PHONY: help build universal run test install uninstall fmt lint package clean
 
 help: ## Show the available targets
 	@printf 'DoubaoVoiceRestore %s\n\n' '$(VERSION)'
@@ -27,6 +27,9 @@ universal: ## Build a universal (arm64 + x86_64) release binary
 run: ## Build and run in the foreground (^C to stop)
 	swift run -c release $(BINARY)
 
+test: ## Run the unit tests
+	swift test
+
 install: ## Build and install the LaunchAgent for the current user
 	@bash scripts/install.sh
 
@@ -34,10 +37,10 @@ uninstall: ## Stop and remove the LaunchAgent
 	@bash scripts/uninstall.sh
 
 fmt: ## Format the Swift sources in place
-	swift format --in-place --recursive Sources
+	swift format --in-place --recursive Sources Tests
 
 lint: ## Check formatting without writing changes
-	swift format lint --strict --recursive Sources
+	swift format lint --strict --recursive Sources Tests
 
 package: universal ## Assemble the release archive in dist/
 	rm -rf $(STAGE_DIR) $(ARCHIVE)

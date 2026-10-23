@@ -1,5 +1,6 @@
 import Carbon.HIToolbox
 import CoreGraphics
+import DoubaoVoiceRestoreCore
 import Foundation
 
 // MARK: - Input source
@@ -15,11 +16,6 @@ enum InputSource {
             return nil
         }
         return id(of: source)
-    }
-
-    static func isDoubao(_ id: String?) -> Bool {
-        guard let id else { return false }
-        return id.hasPrefix(Tuning.doubaoInputSourcePrefix)
     }
 
     /// Selects the input source with the given bundle ID.
@@ -52,20 +48,24 @@ enum InputSource {
 /// Uses `CGWindowListCopyWindowInfo`, which reports window geometry only — no
 /// screen contents are read, so no Screen Recording permission is required.
 struct VoicePillProbe {
-    private var cachedPID: pid_t = 0
+    /// Whether each window-owner PID is the Doubao IME server. PIDs are only
+    /// reused after a process exits, so entries are dropped once a PID no
+    /// longer owns any on-screen window.
+    private var isDoubaoByPID: [pid_t: Bool] = [:]
 
-    /// On-screen windows currently owned by the Doubao input method.
+    /// Frames of the on-screen windows currently owned by the Doubao input method.
     mutating func doubaoWindows() -> [CGRect] {
-        let pid = resolvePID()
-        guard pid != 0 else { return [] }
         guard
             let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
                 as? [[String: Any]]
         else { return [] }
 
-        return windows.compactMap { window in
-            guard let owner = window[kCGWindowOwnerPID as String] as? pid_t, owner == pid,
-                let bounds = window[kCGWindowBounds as String] as? [String: Any]
+        var seen: [pid_t: Bool] = [:]
+        let frames: [CGRect] = windows.compactMap { window in
+            guard let owner = window[kCGWindowOwnerPID as String] as? pid_t else { return nil }
+            let isDoubao = seen[owner] ?? isDoubaoByPID[owner] ?? Self.isDoubaoProcess(owner)
+            seen[owner] = isDoubao
+            guard isDoubao, let bounds = window[kCGWindowBounds as String] as? [String: Any]
             else { return nil }
 
             return CGRect(
@@ -75,53 +75,26 @@ struct VoicePillProbe {
                 height: bounds["Height"] as? CGFloat ?? 0
             )
         }
+        isDoubaoByPID = seen
+        return frames
     }
 
-    /// True for a small window hugging the bottom edge of any display — the
-    /// shape of Doubao's voice-input pill, as opposed to its candidate bar or
-    /// settings windows.
-    func looksLikePill(_ frame: CGRect) -> Bool {
-        guard frame.width > Tuning.pillMinWidth, frame.width <= Tuning.pillMaxWidth,
-            frame.height > Tuning.pillMinHeight, frame.height <= Tuning.pillMaxHeight
-        else { return false }
-
+    /// Bounds of every active display, in window-list coordinates.
+    func displayBounds() -> [CGRect] {
         var displays = [CGDirectDisplayID](repeating: 0, count: Tuning.maxDisplays)
         var count: UInt32 = 0
         CGGetActiveDisplayList(UInt32(Tuning.maxDisplays), &displays, &count)
-
-        for index in 0..<Int(count) {
-            let screen = CGDisplayBounds(displays[index])
-            if frame.maxY >= screen.maxY - Tuning.pillBottomBand, frame.minY < screen.maxY {
-                return true
-            }
-        }
-        return false
+        return displays.prefix(Int(count)).map(CGDisplayBounds)
     }
 
-    /// PID of the Doubao input method server, cached until the process exits.
-    private mutating func resolvePID() -> pid_t {
-        if cachedPID != 0, kill(cachedPID, 0) == 0 { return cachedPID }
-
-        let output = try? Self.run("/usr/bin/pgrep", ["-x", Tuning.doubaoProcessName])
-        let firstLine = output?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: "\n")
-            .first
-        cachedPID = firstLine.flatMap { pid_t($0) } ?? 0
-        return cachedPID
-    }
-
-    private static func run(_ executable: String, _ arguments: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+    /// Matches the process name directly (one syscall, no subprocess). The
+    /// window list's owner name is localized ("豆包输入法"), so it is not used.
+    private static func isDoubaoProcess(_ pid: pid_t) -> Bool {
+        // The kernel copies up to 2 × MAXCOMLEN bytes and fails with ENOMEM
+        // on anything smaller, so MAXCOMLEN + 1 would never match.
+        var buffer = [CChar](repeating: 0, count: 2 * Int(MAXCOMLEN) + 1)
+        guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return false }
+        return String(cString: buffer) == Tuning.doubaoProcessName
     }
 }
 

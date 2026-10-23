@@ -19,7 +19,7 @@ What I want is simple:
 
 > **Doubao should do voice input and nothing else. When the voice window closes, the input method I actually type with should still be selected.**
 
-Qwen IME (通义千问输入法) already behaves this way. Doubao does not. `DoubaoVoiceRestore` is a ~300-line background agent that fixes exactly that.
+Qwen IME (通义千问输入法) already behaves this way. Doubao does not. `DoubaoVoiceRestore` is a few-hundred-line background agent that fixes exactly that.
 
 ## Before and after
 
@@ -188,7 +188,7 @@ Stops the agent and removes the LaunchAgent, the executable and the log. Doubao 
 
 ## Tuning
 
-Doubao publishes no "voice started / ended" notification, so the session is inferred from the pill window's size and placement. If a Doubao update throws that off, edit the constants in [`Sources/DoubaoVoiceRestore/Tuning.swift`](Sources/DoubaoVoiceRestore/Tuning.swift) and re-run `make install` — nothing else in the code hard-codes those assumptions.
+Doubao publishes no "voice started / ended" notification, so the session is inferred from the pill window's size and placement. If a Doubao update throws that off, edit the constants in [`Sources/DoubaoVoiceRestoreCore/Tuning.swift`](Sources/DoubaoVoiceRestoreCore/Tuning.swift) and re-run `make install` — nothing else in the code hard-codes those assumptions.
 
 | Constant | Default | Meaning |
 | --- | --- | --- |
@@ -197,7 +197,7 @@ Doubao publishes no "voice started / ended" notification, so the session is infe
 | `sessionGoneDelay` | 0.35 s | Debounce after the windows disappear. Raise if it restores too early |
 | `sessionGoneDelayAfterKey` | 0.12 s | Debounce when you ended the session with a keystroke |
 | `armGrace` | 3.0 s | How long to wait for the pill after Doubao is selected. On timeout the switch is treated as manual and ignored |
-| `pollInterval` | 0.06 s | Window polling cadence. Polling is skipped entirely while idle, so idle CPU is ~0% |
+| `pollInterval` | 0.06 s | Window polling cadence. The timer only runs while Doubao is selected or a session is live; when idle it is stopped entirely, so the process makes no wakeups |
 
 ## Troubleshooting
 
@@ -218,6 +218,7 @@ make            # list all targets
 make build      # release build for this Mac
 make universal  # universal arm64 + x86_64 build
 make run        # run in the foreground, ^C to stop
+make test       # run the unit tests
 make lint       # swift-format check
 make fmt        # swift-format in place
 make package    # produce the release zip in dist/
@@ -227,11 +228,16 @@ make clean      # remove build output
 Layout:
 
 ```
-Sources/DoubaoVoiceRestore/
-├── main.swift          CLI parsing and entry point
-├── Watchdog.swift      state machine: idle → arming → session → restoring
-├── SystemProbes.swift  read-only wrappers over input source / window / key-activity APIs
-└── Tuning.swift        every tunable constant
+Sources/
+├── DoubaoVoiceRestoreCore/      pure decision logic, no system calls, unit-tested
+│   ├── RestoreMachine.swift     state machine: idle → arming → session → restoring
+│   ├── Heuristics.swift         Doubao input-source / voice-pill classification
+│   └── Tuning.swift             every tunable constant
+└── DoubaoVoiceRestore/          system glue
+    ├── main.swift               CLI parsing and entry point
+    ├── Watchdog.swift           feeds observations to the machine, runs its actions, starts/stops polling
+    └── SystemProbes.swift       read-only wrappers over input source / window / key-activity APIs
+Tests/DoubaoVoiceRestoreCoreTests/  unit tests replaying real-world timings on a virtual clock
 ```
 
 Command line:
