@@ -21,15 +21,19 @@ enum InputSource {
     /// Selects the input source with the given bundle ID.
     /// - Returns: `false` if the source is not installed or TIS refused the switch.
     static func select(id wanted: String) -> Bool {
-        guard
-            let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue()
-                as? [TISInputSource]
-        else { return false }
-
-        for source in sources where id(of: source) == wanted {
-            return TISSelectInputSource(source) == noErr
+        guard let source = installedSources().first(where: { id(of: $0) == wanted }) else {
+            return false
         }
-        return false
+        return TISSelectInputSource(source) == noErr
+    }
+
+    /// Bundle IDs of every enabled input source.
+    static func installedIDs() -> [String] {
+        installedSources().compactMap(id(of:))
+    }
+
+    private static func installedSources() -> [TISInputSource] {
+        TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] ?? []
     }
 
     private static func id(of source: TISInputSource) -> String? {
@@ -55,10 +59,15 @@ struct VoicePillProbe {
 
     /// Frames of the on-screen windows currently owned by the Doubao input method.
     mutating func doubaoWindows() -> [CGRect] {
+        doubaoWindowList() ?? []
+    }
+
+    /// Like `doubaoWindows()`, but `nil` when the window server query fails.
+    mutating func doubaoWindowList() -> [CGRect]? {
         guard
             let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
                 as? [[String: Any]]
-        else { return [] }
+        else { return nil }
 
         var seen: [pid_t: Bool] = [:]
         let frames: [CGRect] = windows.compactMap { window in
@@ -90,11 +99,16 @@ struct VoicePillProbe {
     /// Matches the process name directly (one syscall, no subprocess). The
     /// window list's owner name is localized ("豆包输入法"), so it is not used.
     private static func isDoubaoProcess(_ pid: pid_t) -> Bool {
+        processName(pid) == Tuning.doubaoProcessName
+    }
+
+    /// The kernel's short name of a process, or `nil` if it cannot be read.
+    static func processName(_ pid: pid_t) -> String? {
         // The kernel copies up to 2 × MAXCOMLEN bytes and fails with ENOMEM
         // on anything smaller, so MAXCOMLEN + 1 would never match.
         var buffer = [CChar](repeating: 0, count: 2 * Int(MAXCOMLEN) + 1)
-        guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return false }
-        return String(cString: buffer) == Tuning.doubaoProcessName
+        guard proc_name(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        return String(cString: buffer)
     }
 }
 

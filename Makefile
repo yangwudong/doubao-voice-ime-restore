@@ -27,8 +27,9 @@ universal: ## Build a universal (arm64 + x86_64) release binary
 run: ## Build and run in the foreground (^C to stop)
 	swift run -c release $(BINARY)
 
-test: ## Run the unit tests
+test: ## Run the unit tests and the system self-check
 	swift test
+	swift run -c release $(BINARY) --self-check
 
 install: ## Build and install the LaunchAgent for the current user
 	@bash scripts/install.sh

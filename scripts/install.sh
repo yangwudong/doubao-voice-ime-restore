@@ -115,6 +115,12 @@ locate_binary() {
 locate_binary
 [[ -x "$source_bin" ]] || die "${source_bin:-no binary} is not executable."
 
+# Releases before 1.2.0 (installable via DVR_VERSION) have no --self-check.
+if "$source_bin" --help 2>/dev/null | grep -q -- '--self-check'; then
+	info "Checking the system APIs it relies on"
+	"$source_bin" --self-check || die "self-check failed; not installing. Please report the output above."
+fi
+
 info "Stopping any previous instance"
 for label in "$LABEL" "${LEGACY_LABELS[@]}"; do
 	launchctl bootout "$DOMAIN/$label" 2>/dev/null || true

@@ -65,4 +65,12 @@ public enum Tuning {
 
     /// Silence this long re-arms keystroke detection.
     public static let keyIdleThreshold: TimeInterval = 0.7
+
+    // MARK: Logging
+
+    /// When the log file exceeds this size at startup, it is trimmed…
+    public static let logMaxBytes: off_t = 1_000_000
+
+    /// …down to roughly its most recent this-many bytes.
+    public static let logKeepBytes: off_t = 200_000
 }

@@ -32,6 +32,9 @@ jobs:
           lipo -info "$binary"
           "$binary" --version
           "$binary" --help > /dev/null
+          # Exercises TIS, the window server and proc_name. Runners have no
+          # Doubao IME, which only produces warnings.
+          "$binary" --self-check
 
   lint:
     name: Lint

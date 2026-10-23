@@ -169,6 +169,18 @@ final class RestoreMachineTests: XCTestCase {
         XCTAssertEqual(h.machine.sourceToRestore, sogou)
     }
 
+    func testQuickManualSwitchRightBeforeTheHotkeyIsKept() {
+        // The user switches Sogou → WeChat and presses the hotkey 0.1s later.
+        // Doubao's hotkey still hops through the source before WeChat (Sogou)
+        // first, so the hop — not the manual switch — is the one skipped.
+        var h = Harness(startingOn: sogou)
+        h.advance(10)
+        h.switchTo(wechat)
+        h.advance(0.1)
+        h.pressVoiceHotkey(hoppingThrough: sogou)
+        XCTAssertEqual(h.machine.sourceToRestore, wechat)
+    }
+
     func testSettledManualSwitchIsKept() {
         var h = Harness(startingOn: sogou)
         h.advance(5)

@@ -204,7 +204,8 @@ Doubao publishes no "voice started / ended" notification, so the session is infe
 | Symptom | Where to look |
 | --- | --- |
 | Nothing happens at all | `launchctl list \| grep doubao-voice-ime-restore` to confirm it is running, then read the tail of the log |
-| Log shows `no pill within 3.0s` | The pill was not recognised (Doubao redesign, or multi-display placement). Tune `pillMaxWidth` / `pillMaxHeight` / `pillBottomBand` |
+| Suspect a system API problem | Run `"$HOME/Library/Application Support/DoubaoVoiceRestore/DoubaoVoiceRestore" --self-check` to check input sources, the window query and process lookup one by one |
+| Log shows `no pill within 3.0s` | The pill was not recognised (Doubao redesign, or multi-display placement). Run with `--verbose` to log every Doubao window's frame and whether it counted as the pill, then tune `pillMaxWidth` / `pillMaxHeight` / `pillBottomBand` |
 | Log never shows `input source ->` | Doubao's global voice input is off, or its hotkey does not actually switch the input source |
 | Restores too early, cutting off the session | Increase `sessionGoneDelay` |
 | Restores too slowly | Decrease `sessionGoneDelay` |
@@ -243,10 +244,12 @@ Tests/DoubaoVoiceRestoreCoreTests/  unit tests replaying real-world timings on a
 Command line:
 
 ```
-DoubaoVoiceRestore [-q|--quiet] [-h|--help] [-v|--version]
+DoubaoVoiceRestore [-q|--quiet] [--verbose] [--self-check] [-h|--help] [-v|--version]
 ```
 
-`--quiet` disables logging entirely; add it to `ProgramArguments` in the plist if you would rather the log file stopped growing.
+`--quiet` disables logging entirely. `--verbose` also logs every input-source change and every change in Doubao's windows, for troubleshooting. `--self-check` exercises the system APIs it relies on, read-only, then exits; `install.sh` runs it before installing.
+
+The log does not grow without bound: at each start, a log over 1 MB is trimmed to its most recent ~200 KB.
 
 ## Privacy
 

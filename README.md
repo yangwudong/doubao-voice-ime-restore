@@ -204,7 +204,8 @@ bash uninstall.sh           # 从解压出来的发布包
 | 现象 | 排查方向 |
 | --- | --- |
 | 完全没反应 | `launchctl list \| grep doubao-voice-ime-restore` 看进程是否在跑；再看日志尾部 |
-| 日志里出现 `no pill within 3.0s` | 浮窗没被识别（豆包改版或多屏摆放问题）。调 `pillMaxWidth` / `pillMaxHeight` / `pillBottomBand` |
+| 怀疑系统接口有问题 | 运行 `"$HOME/Library/Application Support/DoubaoVoiceRestore/DoubaoVoiceRestore" --self-check`，逐项检查输入法、窗口查询、进程识别是否正常 |
+| 日志里出现 `no pill within 3.0s` | 浮窗没被识别（豆包改版或多屏摆放问题）。加 `--verbose` 可看到豆包每个窗口的坐标尺寸和判定结果，据此调 `pillMaxWidth` / `pillMaxHeight` / `pillBottomBand` |
 | 日志一直没有状态跃迁（`armed; will restore …`） | 豆包的全局语音没开启，或者语音快捷键实际上没有切换输入法。加 `--verbose` 可看到每次输入源变化 |
 | 切回来太早（把语音截断了） | 调大 `sessionGoneDelay` |
 | 切回来太慢 | 调小 `sessionGoneDelay` |
@@ -243,10 +244,12 @@ Tests/DoubaoVoiceRestoreCoreTests/  用虚拟时钟回放真实时序的单元�
 命令行参数：
 
 ```
-DoubaoVoiceRestore [-q|--quiet] [-h|--help] [-v|--version]
+DoubaoVoiceRestore [-q|--quiet] [--verbose] [--self-check] [-h|--help] [-v|--version]
 ```
 
-`--quiet` 完全关闭日志输出（想让日志文件不再增长时可以在 plist 的 `ProgramArguments` 里加上）。
+`--quiet` 完全关闭日志输出。`--verbose` 额外记录每次输入源变化和豆包窗口变化，排查问题时用。`--self-check` 只读地检查一遍依赖的系统接口后退出，`install.sh` 安装前也会执行它。
+
+日志不会无限增长：每次启动时如果超过 1 MB，会截断为最近的约 200 KB。
 
 ## 隐私
 

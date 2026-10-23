@@ -1,7 +1,7 @@
 import Foundation
 
 let programName = "DoubaoVoiceRestore"
-let programVersion = "1.1.0"
+let programVersion = "1.2.0"
 
 func printUsage(to stream: FileHandle = .standardOutput) {
     let usage = """
@@ -14,6 +14,7 @@ func printUsage(to stream: FileHandle = .standardOutput) {
         OPTIONS
           -q, --quiet      Do not log activity
           --verbose        Also log every input-source change (default: state transitions only)
+          --self-check     Exercise the system APIs this tool relies on, then exit
           -h, --help       Show this help and exit
           -v, --version    Show the version and exit
 
@@ -34,6 +35,8 @@ for argument in CommandLine.arguments.dropFirst() {
         isQuiet = true
     case "--verbose":
         isVerbose = true
+    case "--self-check":
+        exit(SelfCheck.run())
     case "-h", "--help":
         printUsage()
         exit(EXIT_SUCCESS)
@@ -47,6 +50,8 @@ for argument in CommandLine.arguments.dropFirst() {
         exit(64)  // EX_USAGE
     }
 }
+
+LogFile.trimIfNeeded()
 
 // Held by a global so the run loop's weak captures stay valid for the
 // lifetime of the process.
