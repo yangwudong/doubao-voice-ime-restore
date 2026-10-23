@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Re-publish the archive for an existing tag, e.g. when its release was
+  # created by hand and the tag-triggered run could not attach the asset.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish (e.g. v1.0.4)
+        required: true
 
 permissions:
   contents: write
@@ -11,28 +18,39 @@ jobs:
   release:
     name: Build and publish
     runs-on: macos-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
 
       - name: Check the tag matches programVersion
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${TAG#v}"
           source_version=$(sed -n 's/^let programVersion = "\(.*\)"/\1/p' \
             Sources/DoubaoVoiceRestore/main.swift)
           if [[ "$tag" != "$source_version" ]]; then
-            echo "tag $GITHUB_REF_NAME does not match programVersion $source_version" >&2
+            echo "tag $TAG does not match programVersion $source_version" >&2
             exit 1
           fi
 
       - name: Build the release archive
         run: make package
 
+      # The release may already exist (created by hand with curated notes,
+      # or by an earlier run): attach the archive instead of failing.
       - name: Publish the GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber
+          else
+            gh release create "$TAG" dist/*.zip \
+              --verify-tag \
+              --title "$TAG" \
+              --generate-notes
+          fi
