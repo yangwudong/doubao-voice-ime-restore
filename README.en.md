@@ -93,6 +93,7 @@ Supported environment variables:
 | --- | --- | --- |
 | `DVR_VERSION` | `latest` | Install a specific tag, e.g. `v1.0.0` |
 | `DVR_MIRROR` | empty | URL prefix for the GitHub download, e.g. `https://ghfast.top/` |
+| `DVR_VERBOSE` | empty | Set to `1` to run the agent with `--verbose`, logging every input-source change, for troubleshooting |
 
 ### Other ways
 

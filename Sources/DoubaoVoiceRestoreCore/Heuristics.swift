@@ -22,8 +22,12 @@ public enum Heuristics {
             frame.height > Tuning.pillMinHeight, frame.height <= Tuning.pillMaxHeight
         else { return false }
 
+        // The bottom band is per display: check the pill is horizontally on
+        // the same display, or a window mid-screen on one display could match
+        // another display's bottom edge.
         return displays.contains { screen in
-            frame.maxY >= screen.maxY - Tuning.pillBottomBand && frame.minY < screen.maxY
+            frame.midX >= screen.minX && frame.midX < screen.maxX
+                && frame.maxY >= screen.maxY - Tuning.pillBottomBand && frame.minY < screen.maxY
         }
     }
 }

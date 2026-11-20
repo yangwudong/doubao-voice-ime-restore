@@ -64,7 +64,7 @@ private struct Harness {
     mutating func speakAndFinish() {
         poll(for: 0.5, pill: true)
         poll(for: 2.0, pill: true)
-        poll(for: 1.0)  // windows gone; debounce then restore
+        poll(for: Tuning.sessionGoneDelay + 0.5)  // windows gone; debounce then restore
     }
 
     private mutating func run(_ actions: [RestoreMachine.Action]) {
@@ -250,7 +250,7 @@ final class RestoreMachineTests: XCTestCase {
         h.poll(for: 0.5, window: true)  // candidate window came back
         XCTAssertTrue(h.selected.isEmpty)
         XCTAssertTrue(h.logs.contains("Doubao windows are back; restore cancelled"))
-        h.poll(for: 1.0)
+        h.poll(for: Tuning.sessionGoneDelay + 0.5)
         XCTAssertEqual(h.selected, [sogou])
     }
 
@@ -315,7 +315,7 @@ final class RestoreMachineTests: XCTestCase {
         _ = machine.poll(.init(currentSourceID: doubao, hasPill: true), at: now)
         now += 0.1
         _ = machine.poll(.init(currentSourceID: doubao), at: now)
-        now += 1
+        now += Tuning.sessionGoneDelay + 0.1
         let actions = machine.poll(.init(currentSourceID: doubao), at: now)
         XCTAssertEqual(actions, [.select(sogou)])
         // No confirming notification ever arrives.
@@ -334,7 +334,7 @@ final class RestoreMachineTests: XCTestCase {
         XCTAssertTrue(h.machine.needsPolling, "arming")
         h.poll(for: 0.5, pill: true)
         XCTAssertTrue(h.machine.needsPolling, "session")
-        h.poll(for: 1.0)
+        h.poll(for: Tuning.sessionGoneDelay + 0.5)
         XCTAssertFalse(h.machine.needsPolling, "restored and idle again")
     }
 
@@ -377,5 +377,13 @@ final class HeuristicsTests: XCTestCase {
         let pill = CGRect(x: 2600, y: 1080, width: 120, height: 36)
         XCTAssertFalse(Heuristics.looksLikePill(pill, displays: [screen]))
         XCTAssertTrue(Heuristics.looksLikePill(pill, displays: [screen, external]))
+    }
+
+    func testWindowMidScreenOnOneDisplayDoesNotMatchAnothersBottom() {
+        // y=900 is the bottom band of the laptop screen, but the window sits
+        // horizontally on the taller external display, mid-screen there.
+        let external = CGRect(x: 1512, y: -300, width: 2560, height: 1440)
+        let window = CGRect(x: 2600, y: 900, width: 120, height: 36)
+        XCTAssertFalse(Heuristics.looksLikePill(window, displays: [screen, external]))
     }
 }

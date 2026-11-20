@@ -15,6 +15,8 @@
 #   DVR_VERSION   Release tag to install, e.g. v1.0.0 (default: latest)
 #   DVR_MIRROR    URL prefix for the GitHub download, for networks where
 #                 github.com is slow or blocked, e.g. https://ghfast.top/
+#   DVR_VERBOSE   Set to 1 to run the agent with --verbose (logs every
+#                 input-source change, for troubleshooting)
 
 set -euo pipefail
 
@@ -136,6 +138,12 @@ install -m 755 "$source_bin" "$INSTALLED_BIN"
 xattr -d com.apple.quarantine "$INSTALLED_BIN" 2>/dev/null || true
 codesign --force --sign - --timestamp=none "$INSTALLED_BIN" >/dev/null 2>&1 || true
 
+verbose_arg=""
+if [[ "${DVR_VERBOSE:-}" == "1" ]]; then
+	verbose_arg="
+		<string>--verbose</string>"
+fi
+
 info "Registering the LaunchAgent"
 cat >"$PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -146,7 +154,7 @@ cat >"$PLIST" <<PLIST_EOF
 	<string>$LABEL</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>$INSTALLED_BIN</string>
+		<string>$INSTALLED_BIN</string>$verbose_arg
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -162,10 +170,27 @@ cat >"$PLIST" <<PLIST_EOF
 </plist>
 PLIST_EOF
 
-launchctl bootstrap "$DOMAIN" "$PLIST"
-sleep 1
+# bootout returns before launchd has fully torn the old job down, and an
+# immediate bootstrap of the same label then fails with an I/O error.
+for attempt in 1 2 3 4 5; do
+	if launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
+		break
+	fi
+	[[ $attempt -lt 5 ]] ||
+		die "could not register the LaunchAgent. Try: launchctl bootstrap $DOMAIN \"$PLIST\""
+	sleep 1
+done
 
-launchctl list "$LABEL" >/dev/null 2>&1 ||
+# Registered is not the same as running: wait for launchd to report a PID.
+running=""
+for _ in 1 2 3 4 5; do
+	if launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -q 'pid = '; then
+		running=1
+		break
+	fi
+	sleep 1
+done
+[[ -n "$running" ]] ||
 	die "the agent did not start. Check the log: tail -50 \"$LOG_FILE\""
 
 if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/uninstall.sh" ]]; then

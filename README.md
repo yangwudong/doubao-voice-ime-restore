@@ -93,6 +93,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/yangwudong/doubao-voice-ime-restore@main/
 | --- | --- | --- |
 | `DVR_VERSION` | `latest` | 安装指定版本，例如 `v1.0.0` |
 | `DVR_MIRROR` | 空 | GitHub 下载地址的镜像前缀，例如 `https://ghfast.top/` |
+| `DVR_VERBOSE` | 空 | 设为 `1` 时后台进程带 `--verbose` 运行，记录每次输入法切换，排查问题用 |
 
 ### 其他方式
 
