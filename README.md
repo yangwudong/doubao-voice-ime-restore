@@ -27,7 +27,7 @@ English: [README.en.md](README.en.md)
 | --- | --- | --- |
 | 按住语音快捷键 | 切到豆包 | 切到豆包 |
 | 说话、文字上屏 | 正常 | 正常 |
-| 语音浮窗关闭 | **仍然停在豆包** | 约 0.3 秒后自动切回你原来的输入法 |
+| 语音浮窗关闭 | **仍然停在豆包** | 约 0.25 秒后自动切回你原来的输入法 |
 | 接着敲键盘 | 输入法是错的，手动切 | 输入法就是你选的那个 |
 
 ## 工作原理
@@ -38,10 +38,10 @@ English: [README.en.md](README.en.md)
 | --- | --- | --- |
 | 1. 记住你原来的输入法 | `kTISNotifySelectedKeyboardInputSourceChanged` | 监听输入法切换通知；当输入法变成豆包时，记下切换前那个 |
 | 2. 判断语音会话开始 | `CGWindowListCopyWindowInfo` | 检测豆包在屏幕底部画出的小尺寸语音浮窗。**只读窗口的位置和尺寸，不读屏幕内容**，因此不需要「屏幕录制」权限 |
-| 3. 判断语音会话结束 | 同上 | 豆包的所有窗口都消失后，防抖等待约 0.3 秒 |
+| 3. 判断语音会话结束 | 同上 | 豆包的所有窗口都消失后，防抖等待约 0.25 秒 |
 | 4. 切回去 | `TISSelectInputSource` | 系统公开 API，选回第 1 步记住的输入法 |
 
-另外用 `CGEventSource.secondsSinceLastEventType` 查询「距离上一次按键过了多少秒」，用来区分「你按键主动结束语音」和「静音超时结束」，前者切回得更快（0.12 秒）。这个接口**只返回一个时间差，拿不到按了哪个键**，无法用于记录击键。
+另外用 `CGEventSource.secondsSinceLastEventType` 查询「距离上一次按键过了多少秒」，用来区分「你按键主动结束语音」和「静音超时结束」，前者切回得更快（0.08 秒）。这个接口**只返回一个时间差，拿不到按了哪个键**，无法用于记录击键。
 
 **不修改豆包的任何文件、不注入豆包进程、不需要 `sudo`。** 豆包正常升级不受影响；万一豆包改版导致浮窗判定失效，后果只是「没切回去」，退化成不装本工具的状态。
 
@@ -137,8 +137,8 @@ tail -f ~/Library/Logs/DoubaoVoiceRestore.log
 2026-08-28 19:41:02.311 input source -> com.bytedance.inputmethod.doubaoime (state: idle)
 2026-08-28 19:41:02.377 armed; will restore com.sogou.inputmethod.sogou.pinyin
 2026-08-28 19:41:02.622 voice session started (pill detected)
-2026-08-28 19:41:06.104 Doubao windows gone; restoring in 0.12s
-2026-08-28 19:41:06.231 voice session ended; restored com.sogou.inputmethod.sogou.pinyin
+2026-08-28 19:41:06.104 Doubao windows gone; restoring in 0.08s
+2026-08-28 19:41:06.191 voice session ended; restored com.sogou.inputmethod.sogou.pinyin
 ```
 
 确认后台进程在跑：
@@ -194,8 +194,8 @@ bash uninstall.sh           # 从解压出来的发布包
 | --- | --- | --- |
 | `pillMaxWidth` / `pillMaxHeight` | 280 / 64 | 语音浮窗的最大宽高（点）。浮窗变大了就调大 |
 | `pillBottomBand` | 200 | 浮窗必须落在距屏幕底部这个范围内 |
-| `sessionGoneDelay` | 0.35 s | 窗口消失后的默认防抖时间。切回太早就调大 |
-| `sessionGoneDelayAfterKey` | 0.12 s | 你按键结束语音时的防抖时间 |
+| `sessionGoneDelay` | 0.25 s | 窗口消失后的默认防抖时间。切回太早就调大 |
+| `sessionGoneDelayAfterKey` | 0.08 s | 你按键结束语音时的防抖时间 |
 | `armGrace` | 3.0 s | 切到豆包后，等浮窗出现的最长时间。超时视为你手动切的，不做处理 |
 | `pollInterval` | 0.06 s | 窗口轮询间隔。只在豆包被选中或语音会话进行中才运行；空闲时轮询定时器完全停止，进程零唤醒 |
 

@@ -39,11 +39,11 @@ public enum Tuning {
     public static let armGrace: TimeInterval = 3.0
 
     /// Debounce after every Doubao window disappears, before restoring.
-    public static let sessionGoneDelay: TimeInterval = 0.35
+    public static let sessionGoneDelay: TimeInterval = 0.25
 
     /// Shorter debounce when the user ended the session by pressing a key —
     /// the intent is unambiguous, so restore faster.
-    public static let sessionGoneDelayAfterKey: TimeInterval = 0.12
+    public static let sessionGoneDelayAfterKey: TimeInterval = 0.08
 
     /// Window-polling cadence. The poll timer only runs while there is
     /// something to watch; when idle away from Doubao it is stopped.

@@ -27,7 +27,7 @@ Qwen IME (通义千问输入法) already behaves this way. Doubao does not. `Dou
 | --- | --- | --- |
 | Hold the voice hotkey | switches to Doubao | switches to Doubao |
 | Speak, text is inserted | works | works |
-| Voice window closes | **still on Doubao** | back to your input method after ~0.3 s |
+| Voice window closes | **still on Doubao** | back to your input method after ~0.25 s |
 | Keep typing | wrong input method, fix by hand | the one you chose |
 
 ## How it works
@@ -38,10 +38,10 @@ Three read-only observations and one public API call. Doubao is never touched.
 | --- | --- | --- |
 | 1. Remember your input source | `kTISNotifySelectedKeyboardInputSourceChanged` | When the active source becomes Doubao, record what was active just before |
 | 2. Detect the session start | `CGWindowListCopyWindowInfo` | Look for the small voice pill Doubao draws near the bottom of a display. **Window geometry only — no screen contents**, so no Screen Recording permission is needed |
-| 3. Detect the session end | same | Every Doubao window disappears, then a ~0.3 s debounce |
+| 3. Detect the session end | same | Every Doubao window disappears, then a ~0.25 s debounce |
 | 4. Switch back | `TISSelectInputSource` | Public API; re-selects the source from step 1 |
 
-`CGEventSource.secondsSinceLastEventType` is also used to ask *how many seconds ago* the last key-down happened, which distinguishes "the user pressed a key to end the session" (restore after 0.12 s) from "silence timeout". That API returns **only a time interval — never which key was pressed** — so it cannot be used to log keystrokes.
+`CGEventSource.secondsSinceLastEventType` is also used to ask *how many seconds ago* the last key-down happened, which distinguishes "the user pressed a key to end the session" (restore after 0.08 s) from "silence timeout". That API returns **only a time interval — never which key was pressed** — so it cannot be used to log keystrokes.
 
 **No Doubao files are modified, no process is injected, no `sudo`.** Doubao updates cannot break the install. If a future Doubao redesign breaks the pill heuristics, the failure mode is a missed restore — i.e. the behaviour you already have today without this tool.
 
@@ -137,8 +137,8 @@ A healthy session looks like this:
 2026-08-28 19:41:02.311 input source -> com.bytedance.inputmethod.doubaoime (state: idle)
 2026-08-28 19:41:02.377 armed; will restore com.sogou.inputmethod.sogou.pinyin
 2026-08-28 19:41:02.622 voice session started (pill detected)
-2026-08-28 19:41:06.104 Doubao windows gone; restoring in 0.12s
-2026-08-28 19:41:06.231 voice session ended; restored com.sogou.inputmethod.sogou.pinyin
+2026-08-28 19:41:06.104 Doubao windows gone; restoring in 0.08s
+2026-08-28 19:41:06.191 voice session ended; restored com.sogou.inputmethod.sogou.pinyin
 ```
 
 Confirm the agent is running:
@@ -194,8 +194,8 @@ Doubao publishes no "voice started / ended" notification, so the session is infe
 | --- | --- | --- |
 | `pillMaxWidth` / `pillMaxHeight` | 280 / 64 | Maximum size of the voice pill, in points. Raise if the pill grew |
 | `pillBottomBand` | 200 | The pill must sit within this many points of the bottom of a display |
-| `sessionGoneDelay` | 0.35 s | Debounce after the windows disappear. Raise if it restores too early |
-| `sessionGoneDelayAfterKey` | 0.12 s | Debounce when you ended the session with a keystroke |
+| `sessionGoneDelay` | 0.25 s | Debounce after the windows disappear. Raise if it restores too early |
+| `sessionGoneDelayAfterKey` | 0.08 s | Debounce when you ended the session with a keystroke |
 | `armGrace` | 3.0 s | How long to wait for the pill after Doubao is selected. On timeout the switch is treated as manual and ignored |
 | `pollInterval` | 0.06 s | Window polling cadence. The timer only runs while Doubao is selected or a session is live; when idle it is stopped entirely, so the process makes no wakeups |
 
